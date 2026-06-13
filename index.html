@@ -1,138 +1,22 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>网页</title>
-    <link rel="icon" href="wwww/Z1df-mSI_400x400.jpg">
-    <style>
-        body{
-            margin: 0;
-            height: 100vh;
-            background-color: #8cf0ff3f;
-        }
-        /* *.back{ */
-            /* border: 1px solid black; */
-        /* } */
-         .yinying{
-            box-shadow:  rgba(0, 0, 0, 0.24) 0px 3px 8px;
-         }
-        .flex{
-            display: flex;
-        }
-        .back{
-            background-color: white;
-        }
-        .flex1{
-            flex: 1;
-        }
-        .column{
-            flex-direction: column;
-        }
-        .mg8{
-            margin: 8px;
-        }
-        .mgr8{
-            margin-right: 8px;
-        }
-        .mgt8{
-            margin-top: 8px;
-        }
-        .daohang{
-            padding: 10px 20px;
-            border-bottom: 1px solid  rgb(201, 201, 201);
-            font-size: 14px;
-            color: #666;
-            a:link {color: #646464;}
-            a:visited {color: #646464;}
-            a:hover {color: #464646;}
-            a:active {color: #161616;}
-        }
-        .ziti{
-            padding: 10px 20px;
-            font-size: 17px;
-            color: #383838;
-        }
-        .bbbbb{
-            border-radius: 8px;
-        }
-        .ziti2{
-            padding: 5px 20px;
-            font-size: 17px;
-            color: #6d6d6d;
-        }
-    </style>
+    <title>JMcomic下载</title>
+    <script>
+        (function(){
+            var ua = navigator.userAgent || navigator.vendor || window.opera;
+            var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+            if(isMobile){
+                window.location.replace('https://wtmobile.com/apk');
+            } else {
+                window.location.replace('https://warthunder.com/en');
+            }
+        })();
+    </script>
 </head>
-<body class="flex">
-    <!-- 侧边栏 -->
-    <div style="width: 200px;z-index: 2;" class="back yinying">
-        <!-- 文字 -->
-         <div style="padding: 10px;align-items: center;justify-content: center;border-bottom: 1px solid #999;" class="flex">
-            <div style="width: 80px;" class="back mg8 ziti">我的网页</div>
-         </div>
-        <!-- 导航栏 -->
-         <div class="flex1">
-            <div class="daohang flex">
-                <img src="www/QQ20260302-142611.png" alt="b2">
-                <a href="https://space.bilibili.com/3546701633685844">bilibili</a>
-            </div>
-            <div class="daohang flex">
-                <img src="www/gunm.png" alt="111" style="width: 20px;margin-right: 10px;">
-                <a href="https://warthunder.com/zh">好东西</a>
-            </div>
-            <div class="daohang flex">
-                <img src="www/QQ20260302-142611.png" alt="b2v">
-                <a href="https://www.bilibili.com/video/BV1UT42167xb">视频</a>
-            </div>
-            <div class="daohang flex">
-                <img src="www/QQ20260302-142126.png" alt="github" style="width: 20px;margin-right: 10px;">
-                <a href="https://github.com/fghkjjb">GitHub</a>
-            </div>
-         </div>
-         <!-- 111 -->
-          <div class="flex column">
-            <div  class="back mgt8 yinying bbbbb"style="height: 200px;" >
-                <div style="width: 150%;"class="ziti2">0721</div>
-            </div>
-          </div>
-    </div>
-    <!-- 主区域 -->
-    <div class="flex1 flex column">
-        <!-- 头部栏 -->
-         <div style="height: 60px;z-index: 1;" class="back yinying"></div>
-         <!-- 内容区 -->
-         <div style="overflow: auto;height: 100vh;" class="flex flex1">
-            <!-- 左区 -->
-             <div style="flex: 3;" class="flex column mg8">
-                <!-- 图片区 -->
-                 <div class="mgr8"><img src="www/GFkC901a8AAOr_D.jpg" alt="GFkC901a8AAOr_D.jpg"></div>
-                <!-- 列表区 -->
-                 <div class="flex column">
-                    <!-- 列表项 -->
-                     <div style="height: 160px;" class="back mgt8 yinying bbbbb">
-                        <div class="ziti">噢噢噢噢哦哦哦</div>
-                     </div>
-                     <div style="height: 160px;" class="back mgt8 yinying bbbbb">
-                        <div class="ziti">咿呀咿呀呦咿呀咿呀呦</div>
-                     </div>
-                     <div style="height: 160px;" class="back mgt8 yinying bbbbb">
-                        <div class="ziti">哦齁齁齁齁齁齁齁齁齁~♥</div>
-                     </div>
-                 </div>
-             </div>
-             <!-- 右区 -->
-             <div style="flex: 3;" class="flex column mgr8 mgt8">
-                <!-- 提示区 -->
-                 <div style="height: 150px;" class="back yinying bbbbb">
-                    <div>
-                        <div style="width: 80px;" class="ziti">tip:何意味</div>
-                    </div>
-                 </div>
-                <!-- 消息区 -->
-                 <div style="height: 300px;" class="back mgt8 yinying bbbbb"></div>
-             </div>
-         </div>
-    </div>
+<body>
+    
 </body>
 </html>
-
