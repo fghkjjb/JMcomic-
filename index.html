@@ -1,22 +1,76 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JMcomic下载</title>
-    <script>
-        (function(){
-            var ua = navigator.userAgent || navigator.vendor || window.opera;
-            var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-            if(isMobile){
-                window.location.replace('https://wtmobile.com/apk');
-            } else {
-                window.location.replace('https://warthunder.com/en');
-            }
-        })();
-    </script>
 </head>
 <body>
-    
+    <div id="start-container">
+        <button id="startBtn">点击跳转</button>
+    </div>
+
+    <div id="overlay" aria-hidden="true">
+        <div id="count">5</div>
+        <div id="label">秒后加载</div>
+    </div>
+
+    <style>
+        html,body{height:100%;margin:0;font-family:Segoe UI, Roboto, "Microsoft Yahei", sans-serif}
+        body{
+            background-image: url('ee46d5380d99b4b573c62238273062da2103280811.gif');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }
+        /* 若想使用其他图片，请替换上面的 bg.jpg 路径 */
+        #start-container{height:100%;display:flex;align-items:center;justify-content:center}
+        #startBtn{padding:12px 20px;font-size:20px;border-radius:6px;border:0;cursor:pointer}
+        #overlay{
+            position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+            background:rgba(0,0,0,0.55);color:#fff;z-index:9999;transition:opacity .4s ease,visibility .4s ease;
+            opacity:0;visibility:hidden;
+        }
+        #overlay[aria-hidden="false"]{opacity:1;visibility:visible}
+        #count{font-size:96px;font-weight:700;line-height:1}
+        #label{margin-top:8px;font-size:20px;opacity:0.9}
+        #overlay.fade{opacity:0;visibility:hidden}
+    </style>
+
+    <script>
+        (function(){
+            var initialSeconds = 5;
+            var seconds = initialSeconds;
+            var el = document.getElementById('count');
+            var overlay = document.getElementById('overlay');
+            var startBtn = document.getElementById('startBtn');
+            var timer = null;
+
+            function startCountdown(){
+                if(timer) return; // 已开始则不重复启动
+                seconds = initialSeconds;
+                el.textContent = seconds;
+                overlay.setAttribute('aria-hidden','false');
+                startBtn.disabled = true;
+                timer = setInterval(function(){
+                    seconds -= 1;
+                    if(seconds <= 0){
+                        clearInterval(timer);
+                        timer = null;
+                        el.textContent = '0';
+                        overlay.classList.add('fade');
+                        setTimeout(function(){
+                            window.location.href = 'dvbn.html';
+                        }, 400);
+                    } else {
+                        el.textContent = seconds;
+                    }
+                }, 1000);
+            }
+
+            startBtn.addEventListener('click', startCountdown);
+        })();
+    </script>
 </body>
 </html>
