@@ -7,7 +7,10 @@
 </head>
 <body>
     <div id="start-container">
-        <button id="startBtn">点击跳转</button>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:center">
+            <button id="startBtn">点击跳转</button>
+            <button id="watchBtn">在线观看</button>
+        </div>
     </div>
 
     <div id="overlay" aria-hidden="true">
@@ -27,6 +30,16 @@
         /* 若想使用其他图片，请替换上面的 bg.jpg 路径 */
         #start-container{height:100%;display:flex;align-items:center;justify-content:center}
         #startBtn{padding:12px 20px;font-size:20px;border-radius:6px;border:0;cursor:pointer}
+        /* 透明背景的在线观看按钮 */
+        #watchBtn{
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.7);
+            color: #fff;
+            padding:12px 20px;
+            font-size:20px;
+            border-radius:6px;
+            cursor:pointer;
+        }
         #overlay{
             position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
             background:rgba(0,0,0,0.55);color:#fff;z-index:9999;transition:opacity .4s ease,visibility .4s ease;
@@ -70,6 +83,13 @@
             }
 
             startBtn.addEventListener('click', startCountdown);
+            // 新增：在线观看按钮
+            var watchBtn = document.getElementById('watchBtn');
+            if(watchBtn){
+                watchBtn.addEventListener('click', function(){
+                    window.location.href = 'https://www.bilibili.com/video/BV1EF3uzeETo/?share_source=copy_web&vd_source=98db87a04846a99b9ccaa751c40c2dfa';
+                });
+            }
         })();
     </script>
 </body>
