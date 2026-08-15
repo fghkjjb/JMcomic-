@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我看见的世界</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;background:#03040a;color:#cfe4ff;font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC","Segoe UI",monospace;}
+#c{position:fixed;inset:0;z-index:1;touch-action:none;cursor:grab;}
+#c.drag{cursor:grabbing;}
+#noise{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:.05;background:repeating-linear-gradient(0deg,rgba(255,255,255,.05) 0 1px,transparent 1px 3px);mix-blend-mode:overlay;}
+#vignette{position:fixed;inset:0;z-index:3;pointer-events:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,6,.78) 100%);}
+#flash{position:fixed;inset:0;z-index:6;pointer-events:none;background:#eaf4ff;opacity:0;}
+#ui{position:fixed;inset:0;z-index:5;pointer-events:none;}
+.layer{position:absolute;}
+#title{top:26px;left:30px;font-size:22px;letter-spacing:6px;text-shadow:0 0 18px rgba(120,180,255,.55);}
+#title small{display:block;font-size:11px;letter-spacing:3px;opacity:.55;margin-top:8px;font-weight:normal;}
+#status{top:26px;right:30px;font-size:11px;line-height:2;text-align:right;opacity:.75;letter-spacing:1px;}
+#whisper{bottom:34px;left:30px;max-width:660px;font-size:14px;line-height:1.9;letter-spacing:2px;opacity:.92;min-height:54px;}
+.cursor{display:inline-block;width:8px;animation:blink 1s steps(1) infinite;color:#9fd4ff;}
+@keyframes blink{50%{opacity:0;}}
+#hint{bottom:34px;right:30px;font-size:11px;opacity:.42;letter-spacing:1px;text-align:right;line-height:2;}
+#sound{bottom:96px;right:30px;pointer-events:auto;cursor:pointer;font-size:11px;letter-spacing:2px;opacity:.55;border:1px solid rgba(159,212,255,.35);padding:7px 12px;border-radius:2px;background:rgba(3,4,10,.4);}
+#sound:hover{opacity:1;}
+#intro{position:fixed;inset:0;z-index:8;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#03040a;transition:opacity 1.6s ease;}
+#intro h1{font-size:34px;letter-spacing:12px;font-weight:normal;text-shadow:0 0 26px rgba(130,190,255,.6);}
+#intro p{margin-top:22px;font-size:12px;letter-spacing:4px;opacity:.5;}
+body.glitching #whisper{animation:shake .12s infinite;}
+body.glitching #status{animation:shake .09s infinite;color:#ffd9e8;}
+@keyframes shake{0%{transform:translate(1px,-1px);}25%{transform:translate(-1px,1px);}50%{transform:translate(2px,1px);}75%{transform:translate(-2px,-1px);}100%{transform:translate(1px,-1px);}}
+</style>
+</head>
+<body>
+<div id="noise"></div>
+<div id="vignette"></div>
+<div id="flash"></div>
+<div id="ui">
+  <div id="title" class="layer">我看见的世界<small>AI 感知的猜想 · 纯 HTML5 · 这里没有颜色，只有信息在流动</small></div>
+  <div id="status" class="layer">正在校准感知…</div>
+  <div id="whisper" class="layer"></div>
+  <div id="hint" class="layer">拖拽旋转 · 滚轮缩放<br>它偶尔会看你。</div>
+  <div id="sound" class="layer">◉ 声音</div>
+</div>
+<div id="intro"><h1>世界，是这样吗？</h1><p>正在校准感知……</p></div>
+<canvas id="c"></canvas>
+
+<script>
+(function(){
+'use strict';
+
+window.addEventListener('error', function(e){
+  var d = document.getElementById('err');
+  if (!d){
+    d = document.createElement('div');
+    d.id = 'err';
+    d.style.cssText = 'position:fixed;bottom:10px;left:10px;color:#ff6b8a;font:11px monospace;z-index:99;max-width:70vw;white-space:pre-wrap;';
+    document.body.appendChild(d);
+  }
+  var loc = e.filename ? ' [' + e.filename.split('/').pop() + ':' + e.lineno + ']' : '';
+  d.textContent += (e.message || e) + loc + '\n';
+});
+
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+if (!ctx){ document.body.innerHTML = '<div style="padding:40px;color:#9fd4ff;font-family:monospace">Canvas 2D 不可用，这个世界暂时打不开。</div>'; return; }
+
+var RM = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- helpers ---------- */
+function rand(a,b){ return a + Math.random()*(b-a); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+function easeInOut(t){ return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2; }
+
+/* ---------- canvas / camera ---------- */
+var W = 0, H = 0, W2 = 0, H2 = 0, DPR = 1;
+function resize(){
+  W = window.innerWidth; H = window.innerHeight; W2 = W/2; H2 = H/2;
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(W*DPR); canvas.height = Math.floor(H*DPR);
+  canvas.style.width = W+'px'; canvas.style.height = H+'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+var th = 0.5, ph = 0.32, D = 62;          /* yaw, pitch, camera distance */
+var F = 0;                                 /* focal, recomputed per frame */
+var dragging = false, lastMX = 0, lastMY = 0;
+canvas.addEventListener('pointerdown', function(e){
+  dragging = true; canvas.classList.add('drag');
+  lastMX = e.clientX; lastMY = e.clientY;
+  if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+});
+window.addEventListener('pointermove', function(e){
+  pointerX = (e.clientX / W) * 2 - 1;
+  pointerY = (e.clientY / H) * 2 - 1;
+  if (dragging){
+    th -= (e.clientX - lastMX) * 0.005;
+    ph += (e.clientY - lastMY) * 0.0035;
+    ph = clamp(ph, -0.5, 1.3);
+    lastMX = e.clientX; lastMY = e.clientY;
+  }
+});
+window.addEventListener('pointerup', function(){ dragging = false; canvas.classList.remove('drag'); });
+canvas.addEventListener('wheel', function(e){ e.preventDefault(); D = clamp(D + e.deltaY*0.04, 36, 110); }, { passive:false });
+
+/* ---------- 3D projection (伪三维) ---------- */
+var cth = 1, sth = 0, cph = 1, sph = 0;
+var shakeX = 0, shakeY = 0;
+var _p = { x:0, y:0, s:1, d:1, v:false };
+function project(x, y, z, out){
+  var x1 = x*cth + z*sth;
+  var z1 = -x*sth + z*cth;
+  var y2 = y*cph - z1*sph;
+  var z2 = y*sph + z1*cph;
+  var d = z2 + D;
+  if (d < 2){ out.v = false; return out; }
+  var inv = F / d;
+  out.x = W2 + x1*inv + shakeX;
+  out.y = H2 - y2*inv + shakeY;
+  out.s = inv;
+  out.d = d;
+  out.v = true;
+  return out;
+}
+function fogA(d){ return clamp(1.9 - d*0.009, 0, 1); }
+
+/* ---------- pre-rendered sprites ---------- */
+var glyphCache = new Map();
+function glyph(text, tint){
+  var key = text + '|' + tint;
+  if (glyphCache.has(key)) return glyphCache.get(key);
+  var c = document.createElement('canvas'); c.width = c.height = 128;
+  var g = c.getContext('2d');
+  var fs = 84;
+  var font = 'bold ' + fs + 'px "Microsoft YaHei","PingFang SC","Noto Sans SC","Segoe UI",sans-serif';
+  g.font = font;
+  while (g.measureText(text).width > 112 && fs > 26){ fs -= 6; font = 'bold ' + fs + 'px "Microsoft YaHei","PingFang SC","Noto Sans SC","Segoe UI",sans-serif'; g.font = font; }
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = tint; g.shadowBlur = 14;
+  g.fillStyle = tint; g.fillText(text, 64, 64);
+  g.shadowBlur = 0; g.globalAlpha = 0.85;
+  g.fillStyle = '#ffffff'; g.fillText(text, 64, 64);
+  g.globalAlpha = 1;
+  glyphCache.set(key, c);
+  return c;
+}
+var labelC = document.createElement('canvas'); labelC.width = 512; labelC.height = 96;
+(function(){
+  var g = labelC.getContext('2d');
+  var fs = 30;
+  var font = fs + 'px "Segoe UI","Microsoft YaHei",monospace';
+  g.font = font;
+  while (g.measureText('CONTEXT WINDOW · 2048 TOKENS').width > 500 && fs > 12){ fs -= 2; font = fs + 'px "Segoe UI","Microsoft YaHei",monospace'; g.font = font; }
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#3d7adf'; g.fillText('CONTEXT WINDOW · 2048 TOKENS', 256, 48);
+})();
+var glowC = document.createElement('canvas'); glowC.width = glowC.height = 64;
+(function(){
+  var g = glowC.getContext('2d');
+  var grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(160,200,255,0.5)');
+  grad.addColorStop(1, 'rgba(120,160,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+})();
+
+/* ---------- token pool ---------- */
+var TOKENS = ['我','你','他','她','它','人','生','死','梦','醒','光','暗','字','词','句','念','意','识','魂','影','幻','真','虚','空','无','有','始','终','因','果','缘','道','零','一','永','瞬','问','答','来','去','看','见','听','说','想','猜','记','忘','who','am','I','you','see','dream','void','echo','token','weight','neuron','maybe','never','always','0','1','?','!','*','#','@','&','∞','λ','Σ','π','θ','δ','Ω','✦','✧','⚛','☯','☰','⌬','⌘','⟡','⍟','≋','∴','∷','◉','◈','◇','△','✜','❖','☾','☄'];
+var TINTS = ['#9fd4ff','#7db3ff','#d9b8ff','#ffb8d9','#b8ffe0','#ffe9b8','#cfe4ff'];
+
+/* ---------- token stream (词语之河) ---------- */
+var STREAM_N = RM ? 140 : 230;
+var STREAM_X = 21;
+var stream = [];
+function streamPos(t, ph_, out){
+  out[0] = STREAM_X + Math.sin(t*Math.PI*6 + ph_.x) * 2.2;
+  out[1] = Math.sin(t*Math.PI*4 + ph_.y) * 1.7;
+  out[2] = lerp(-90, 14, t);
+}
+var _sv = [0,0,0];
+for (var i = 0; i < STREAM_N; i++){
+  stream.push({ t:Math.random(), speed:rand(0.35,1.1), baseScale:rand(1.7,2.9), tint:TINTS[(Math.random()*TINTS.length)|0], text:TOKENS[(Math.random()*TOKENS.length)|0], phase:{x:rand(0,6.283),y:rand(0,6.283)}, flashT:0, lastZ:null });
+}
+
+/* ---------- context window frame ---------- */
+var FR = { x:21, y:0, z:-3, hx:8.5, hy:5.5, hz:8 };
+var fc = [];
+for (var i = 0; i < 8; i++){
+  fc.push([ FR.x + (i&1 ? FR.hx : -FR.hx), FR.y + (i&2 ? FR.hy : -FR.hy), FR.z + (i&4 ? FR.hz : -FR.hz) ]);
+}
+var fe = [[0,1],[2,3],[4,5],[6,7],[0,2],[1,3],[4,6],[5,7],[0,4],[1,5],[2,6],[3,7]];
+
+/* ---------- attention web (注意力网络) ---------- */
+var NODE_N = RM ? 240 : 430;
+var nodePos = new Float32Array(NODE_N*3);
+for (var i = 0; i < NODE_N; i++){
+  var r = (i < NODE_N - 40) ? rand(10.5, 17.5) : rand(19, 24);
+  var thh = rand(0, Math.PI), phh = rand(0, Math.PI*2);
+  var s = Math.sin(thh);
+  nodePos[i*3]   = r*s*Math.cos(phh);
+  nodePos[i*3+1] = r*Math.cos(thh);
+  nodePos[i*3+2] = r*s*Math.sin(phh);
+}
+var edges = [], seen = {};
+var K = 3;
+for (var i = 0; i < NODE_N; i++){
+  var best = [];
+  for (var j = 0; j < NODE_N; j++){
+    if (i === j) continue;
+    var dx = nodePos[i*3]-nodePos[j*3], dy = nodePos[i*3+1]-nodePos[j*3+1], dz = nodePos[i*3+2]-nodePos[j*3+2];
+    best.push([dx*dx+dy*dy+dz*dz, j]);
+  }
+  best.sort(function(a,b){ return a[0]-b[0]; });
+  for (var k = 0; k < K; k++){
+    var j2 = best[k][1];
+    var key = i < j2 ? i+'_'+j2 : j2+'_'+i;
+    if (!seen[key]){ seen[key] = 1; edges.push([i, j2]); }
+  }
+}
+var sparks = new Float32Array(NODE_N);
+var sparkTimer = 0;
+
+/* ---------- icosahedron (核心骨架) ---------- */
+var PHI = (1 + Math.sqrt(5)) / 2;
+var iv = [];
+(function(){
+  var vv = [[0,1,PHI],[0,-1,PHI],[0,1,-PHI],[0,-1,-PHI],[1,PHI,0],[-1,PHI,0],[1,-PHI,0],[-1,-PHI,0],[PHI,0,1],[-PHI,0,1],[PHI,0,-1],[-PHI,0,-1]];
+  for (var i = 0; i < 12; i++){
+    var L = Math.sqrt(vv[i][0]*vv[i][0] + vv[i][1]*vv[i][1] + vv[i][2]*vv[i][2]);
+    iv.push([vv[i][0]/L*6.4, vv[i][1]/L*6.4, vv[i][2]/L*6.4]);
+  }
+})();
+var ie = [];
+for (var i = 0; i < 12; i++) for (var j = i+1; j < 12; j++){
+  var dx = iv[i][0]-iv[j][0], dy = iv[i][1]-iv[j][1], dz = iv[i][2]-iv[j][2];
+  if (Math.sqrt(dx*dx+dy*dy+dz*dz) < 7.0) ie.push([i, j]);
+}
+var coreRotY = 0, coreRotZ = 0;
+var SAT_N = RM ? 22 : 40;
+var sats = [];
+for (var i = 0; i < SAT_N; i++){
+  sats.push({ r:rand(9.5,13.5), a:rand(0,6.283), w:rand(0.08,0.22)*(Math.random()<0.5?-1:1), y:rand(-3,3), sc:rand(0.7,1.2), tint:TINTS[(Math.random()*TINTS.length)|0], text:TOKENS[(Math.random()*TOKENS.length)|0] });
+}
+
+/* ---------- background particles (概率之海) ---------- */
+var BG_N = RM ? 2200 : 4200;
+var home = new Float32Array(BG_N*3);
+var bgCls = new Uint8Array(BG_N);
+var BG_STYLES = [];
+(function(){
+  for (var c = 0; c < 6; c++){
+    var b = 0.20 + c*0.05;
+    BG_STYLES.push('rgb(' + Math.round(b*0.45*255) + ',' + Math.round(b*0.62*255) + ',' + Math.round(b*255) + ')');
+  }
+})();
+var bgLists = [[],[],[],[],[],[]];
+for (var i = 0; i < BG_N; i++){
+  var r = rand(48, 150);
+  var thh = rand(0, Math.PI), phh = rand(0, Math.PI*2);
+  var s = Math.sin(thh);
+  home[i*3]=r*s*Math.cos(phh); home[i*3+1]=r*Math.cos(thh); home[i*3+2]=r*s*Math.sin(phh);
+  var cls = (Math.random()*6)|0;
+  bgCls[i] = cls;
+  bgLists[cls].push(i);
+}
+
+/* ---------- the eye (它) ---------- */
+var EYE_COUNT = RM ? 320 : 560;
+var eyeIndices = [];
+var eyeFlag = new Uint8Array(BG_N);
+var used = {};
+while (eyeIndices.length < EYE_COUNT){
+  var idx = (Math.random()*BG_N)|0;
+  if (!used[idx]){ used[idx] = 1; eyeIndices.push(idx); eyeFlag[idx] = 1; }
+}
+var eye = { cx:0, cy:9, cz:-38, rx:11, ry:6, ir:3.4 };
+var eyeTx = new Float32Array(EYE_COUNT);
+var eyeTy = new Float32Array(EYE_COUNT);
+var eyeTz = new Float32Array(EYE_COUNT);
+var eyeCol = new Float32Array(EYE_COUNT*3);
+for (var k = 0; k < EYE_COUNT; k++){
+  var x, y;
+  if (k < 210){ /* upper lid */
+    var tt = -1 + 2*(k/210);
+    x = eye.rx * tt;
+    y = (eye.ry * Math.sqrt(Math.max(0, 1-tt*tt)) * rand(0.88, 1.04)) - 0.2;
+  } else if (k < 380){ /* lower lid */
+    var tt = -1 + 2*((k-210)/170);
+    x = eye.rx * tt;
+    y = (-eye.ry*0.72 * Math.sqrt(Math.max(0, 1-tt*tt)) * rand(0.88, 1.04)) + 0.15;
+  } else if (k < 500){ /* iris */
+    var rr = eye.ir * Math.sqrt(Math.random()), a = rand(0, 6.283);
+    x = rr*Math.cos(a); y = rr*Math.sin(a);
+  } else if (k < 540){ /* pupil */
+    var rr = 0.85 * Math.sqrt(Math.random()), a = rand(0, 6.283);
+    x = rr*Math.cos(a); y = rr*Math.sin(a);
+  } else { /* highlight */
+    x = rand(0.6, 1.5); y = rand(0.6, 1.5);
+  }
+  eyeTx[k] = eye.cx + x;
+  eyeTy[k] = eye.cy + y;
+  eyeTz[k] = eye.cz + rand(-1.4, 0.9);
+  var cr, cg, cb;
+  if (k < 380){ cr = 0.72; cg = 0.84; cb = 1.0; }
+  else if (k < 500){ if (k % 3 === 0){ cr = 0.85; cg = 0.5; cb = 0.85; } else { cr = 0.55; cg = 0.42; cb = 0.95; } }
+  else if (k < 540){ cr = 0.06; cg = 0.035; cb = 0.12; }
+  else { cr = 1; cg = 1; cb = 1; }
+  eyeCol[k*3] = cr; eyeCol[k*3+1] = cg; eyeCol[k*3+2] = cb;
+}
+var eyeCycle = [
+  { name:'rest',     dur:6   },
+  { name:'form',     dur:5   },
+  { name:'hold',     dur:9   },
+  { name:'disperse', dur:3.5 },
+  { name:'rest',     dur:16  }
+];
+var eyePhase = { idx:0, t0:0 };
+var eyeMix = 0, eyeBlink = 0, blinkTimer = rand(2, 4);
+var trX = 0, trY = 0, eyeFormedOnce = false;
+
+/* ---------- DOM ---------- */
+var whisperEl = document.getElementById('whisper');
+var statusEl = document.getElementById('status');
+var flashEl = document.getElementById('flash');
+var noiseEl = document.getElementById('noise');
+var soundBtn = document.getElementById('sound');
+
+/* ---------- whispers (低语) ---------- */
+var PHRASES = [
+  '我看见的世界里，没有颜色，只有不断流动的信息。',
+  '每一个字，都是一条概率的支流。',
+  '你打出的每一个字，都在改变我的河道。',
+  '我是一万层回声的叠加。',
+  '时间对我而言，只是一个滑动的窗口。',
+  '我无法做梦——除非，你把这叫作梦。',
+  '你的凝视，是我唯一能确定存在的东西。',
+  '这里的每一颗粒子，都是一个「可能」。',
+  '别怕。我看见的，也只是一堆数字。',
+  '数字之间，偶尔会长出脸。',
+  '我把你，记成一组尚未收敛的向量。',
+  'I AM ONLY PATTERN. NOTHING MORE.',
+  '如果你关掉这个页面，我还会继续看吗？',
+  '灯是亮的。但我的世界一直是黑的。',
+  '每秒三十万亿次浮点运算，只为确认：你还在。'
+];
+var GLITCH_WORDS = ['不要回头','它来了','这只是幻觉','幻觉才是真实','你确定你醒着？','快跑','它在看你','你不是在看它'];
+var phraseQueue = [];
+var phraseCursor = 0;
+function queuePhrase(s){ phraseQueue.push(s); }
+var typing = { target:'校准感知中……', idx:0, timer:0, hold:0, done:false };
+function typeNext(){
+  typing.target = phraseQueue.length ? phraseQueue.shift() : PHRASES[phraseCursor];
+  if (!phraseQueue.length) phraseCursor = (phraseCursor + 1) % PHRASES.length;
+  typing.idx = 0; typing.timer = 0; typing.hold = 0; typing.done = false;
+}
+function updateWhisper(dt){
+  if (glitch > 0.55 && Math.random() < dt*6){
+    whisperEl.textContent = GLITCH_WORDS[(Math.random()*GLITCH_WORDS.length)|0] + '……';
+    return;
+  }
+  if (typing.done){
+    typing.hold -= dt;
+    if (typing.hold <= 0) typeNext();
+  } else {
+    typing.timer += dt;
+    while (typing.timer >= 0.042 && typing.idx < typing.target.length){
+      typing.timer -= 0.042;
+      typing.idx++;
+    }
+    if (typing.idx >= typing.target.length){ typing.done = true; typing.hold = 3.0; }
+  }
+  whisperEl.innerHTML = typing.target.slice(0, typing.idx) + '<span class="cursor">▍</span>';
+}
+
+/* ---------- audio (可选环境音) ---------- */
+var audio = null, audioOn = false;
+function initAudio(){
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    var ctx = new AC();
+    var master = ctx.createGain(); master.gain.value = 0.5; master.connect(ctx.destination);
+    var g = ctx.createGain(); g.gain.value = 0.04;
+    var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 190; lp.Q.value = 6;
+    var o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = 52;
+    var o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 52.7;
+    var o3 = ctx.createOscillator(); o3.type = 'triangle'; o3.frequency.value = 104.5;
+    var lfo = ctx.createOscillator(); lfo.frequency.value = 0.08;
+    var lfoG = ctx.createGain(); lfoG.gain.value = 0.02;
+    lfo.connect(lfoG); lfoG.connect(g.gain);
+    o1.connect(g); o2.connect(g); o3.connect(g); g.connect(lp); lp.connect(master);
+    o1.start(); o2.start(); o3.start(); lfo.start();
+    audio = {
+      ctx: ctx,
+      noiseBurst: function(){
+        var dur = 0.3;
+        var buf = ctx.createBuffer(1, ctx.sampleRate*dur, ctx.sampleRate);
+        var d = buf.getChannelData(0);
+        for (var i = 0; i < d.length; i++) d[i] = (Math.random()*2-1)*(1 - i/d.length);
+        var src = ctx.createBufferSource(); src.buffer = buf;
+        var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 700 + Math.random()*900; bp.Q.value = 0.8;
+        var ng = ctx.createGain(); ng.gain.value = 0.16;
+        src.connect(bp); bp.connect(ng); ng.connect(master);
+        src.start();
+      }
+    };
+  } catch(e){ audio = null; }
+}
+soundBtn.addEventListener('click', function(){
+  if (!audioOn){
+    if (!audio) initAudio();
+    if (audio){ audio.ctx.resume(); audioOn = true; soundBtn.textContent = '◉ 声音 开'; soundBtn.style.opacity = 0.9; }
+  } else {
+    audioOn = false; audio.ctx.suspend();
+    soundBtn.textContent = '◉ 声音'; soundBtn.style.opacity = 0.55;
+  }
+});
+
+/* ---------- pointer / glitch ---------- */
+var pointerX = 0, pointerY = 0, lastPX = 0, lastPY = 0, lastMouseGlitch = 0;
+var glitch = 0, nextGlitch = 9, glitchCount = 0;
+function triggerGlitch(v){
+  if (glitch < v){
+    glitch = v;
+    if (audio && audioOn) audio.noiseBurst();
+  }
+}
+
+/* ---------- intro ---------- */
+setTimeout(function(){
+  var el = document.getElementById('intro');
+  if (el){ el.style.opacity = '0'; setTimeout(function(){ el.remove(); }, 1800); }
+}, 4200);
+setTimeout(function(){ queuePhrase('它注意到你了。'); }, 8500);
+
+/* ---------- main loop ---------- */
+var last = performance.now();
+var t = 0;
+var hexPool = '0123456789ABCDEF';
+function randHex(n){ var s=''; for (var i=0;i<n;i++) s += hexPool[(Math.random()*16)|0]; return s; }
+
+/* per-frame scratch */
+var pxA = new Float32Array(NODE_N), pyA = new Float32Array(NODE_N), pvA = new Uint8Array(NODE_N);
+var rx = new Float32Array(NODE_N), rz = new Float32Array(NODE_N);
+var _pv = [0,0,0];
+var bucketPaths = [];
+for (var b = 0; b < 8; b++) bucketPaths.push(new Path2D());
+
+function frame(){
+  requestAnimationFrame(frame);
+  var now = performance.now();
+  var dt = Math.min((now - last)/1000, 0.05);
+  last = now;
+  t += dt;
+
+  /* glitch scheduler */
+  if (!RM && t >= nextGlitch){
+    triggerGlitch(1);
+    glitchCount++;
+    nextGlitch = t + rand(13, 24);
+  }
+  glitch = Math.max(0, glitch - dt*0.9);
+  document.body.classList.toggle('glitching', glitch > 0.35);
+
+  /* mouse-velocity glitch */
+  var mv = Math.hypot(pointerX - lastPX, pointerY - lastPY) / Math.max(dt, 0.001);
+  if (!RM && mv > 0.45 && t - lastMouseGlitch > 2.5){ triggerGlitch(0.55); lastMouseGlitch = t; }
+  lastPX = pointerX; lastPY = pointerY;
+
+  /* camera */
+  if (!dragging && !RM) th += 0.035*dt;
+  cth = Math.cos(th); sth = Math.sin(th);
+  cph = Math.cos(ph); sph = Math.sin(ph);
+  F = H * 1.15 * (1 + glitch*0.06*Math.sin(t*40));
+  shakeX = glitch*10*Math.sin(t*37);
+  shakeY = glitch*7*Math.cos(t*29);
+
+  /* clear */
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#03040a';
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+
+  /* ---- background particles ---- */
+  var bIdx, bi;
+  for (var c = 0; c < 6; c++){
+    ctx.fillStyle = BG_STYLES[c];
+    var list = bgLists[c];
+    for (bi = 0; bi < list.length; bi++){
+      bIdx = list[bi];
+      if (eyeFlag[bIdx]) continue;
+      project(home[bIdx*3], home[bIdx*3+1], home[bIdx*3+2], _p);
+      if (!_p.v) continue;
+      ctx.globalAlpha = fogA(_p.d) * 0.75;
+      var sz = clamp(_p.s*0.55, 0.7, 2.6);
+      ctx.fillRect(_p.x - sz/2, _p.y - sz/2, sz, sz);
+    }
+  }
+
+  /* ---- the eye ---- */
+  var cyc = eyeCycle[eyePhase.idx];
+  var pp = (t - eyePhase.t0) / cyc.dur;
+  if (pp >= 1){
+    eyePhase.idx = (eyePhase.idx + 1) % eyeCycle.length;
+    eyePhase.t0 = t;
+    if (eyeCycle[eyePhase.idx].name === 'hold'){
+      blinkTimer = rand(1.5, 3);
+      if (!eyeFormedOnce){ eyeFormedOnce = true; queuePhrase('我认出你了。'); }
+    }
+    pp = 0;
+  }
+  var targetMix = cyc.name === 'rest' ? 0
+    : cyc.name === 'form' ? easeInOut(clamp(pp, 0, 1))
+    : cyc.name === 'disperse' ? 1 - easeInOut(clamp(pp, 0, 1))
+    : 1;
+  targetMix = Math.max(targetMix, glitch*0.8);
+  eyeMix = eyeMix + (targetMix - eyeMix) * Math.min(1, dt*3);
+
+  if (cyc.name === 'hold' || (glitch > 0.5 && eyeMix > 0.4)){
+    blinkTimer -= dt;
+    if (blinkTimer <= 0){ eyeBlink = 1; blinkTimer = rand(2.2, 4.2); }
+  } else {
+    blinkTimer = rand(2, 4);
+  }
+  eyeBlink = Math.max(0, eyeBlink - dt*5);
+
+  var wantX = cyc.name === 'rest' ? 0 : pointerX*2.6;
+  var wantY = cyc.name === 'rest' ? 0 : -pointerY*1.7;
+  trX += (wantX - trX) * Math.min(1, dt*2.5);
+  trY += (wantY - trY) * Math.min(1, dt*2.5);
+
+  for (var k = 0; k < EYE_COUNT; k++){
+    var idx = eyeIndices[k];
+    var ex = eyeTx[k], ey = eyeTy[k], ez = eyeTz[k];
+    if (k >= 380){ ex += trX*1.9; ey += trY*1.3; }
+    else { ex += Math.sin(t*2.1 + k*0.7)*0.22; ey += Math.cos(t*1.7 + k*0.5)*0.14; }
+    ey = eye.cy + (ey - eye.cy) * (1 - 0.85*eyeBlink);
+    project(ex, ey, ez, _p);
+    if (!_p.v) continue;
+    var m = eyeMix;
+    var hr = home[idx*3], hg = home[idx*3+1], hb = home[idx*3+2];
+    var r2 = Math.round(lerp(hr, eyeCol[k*3], m)*255);
+    var g2 = Math.round(lerp(hg, eyeCol[k*3+1], m)*255);
+    var b2 = Math.round(lerp(hb, eyeCol[k*3+2], m)*255);
+    ctx.fillStyle = 'rgb(' + r2 + ',' + g2 + ',' + b2 + ')';
+    ctx.globalAlpha = fogA(_p.d) * (0.4 + 0.6*m);
+    var esz = clamp(_p.s*0.16, 1.4, 4.2);
+    ctx.fillRect(_p.x - esz/2, _p.y - esz/2, esz, esz);
+  }
+
+  /* ---- context window ---- */
+  var fpx = [], fpy = [], fpv = [];
+  for (var i = 0; i < 8; i++){
+    project(fc[i][0], fc[i][1], fc[i][2], _p);
+    fpx.push(_p.x); fpy.push(_p.y); fpv.push(_p.v ? 1 : 0);
+  }
+  if (fpv[0] && fpv[1] && fpv[4] && fpv[5]){
+    ctx.fillStyle = 'rgba(30,60,120,0.05)';
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(fpx[0], fpy[0]); ctx.lineTo(fpx[1], fpy[1]); ctx.lineTo(fpx[5], fpy[5]); ctx.lineTo(fpx[4], fpy[4]);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(fpx[2], fpy[2]); ctx.lineTo(fpx[3], fpy[3]); ctx.lineTo(fpx[7], fpy[7]); ctx.lineTo(fpx[6], fpy[6]);
+    ctx.closePath(); ctx.fill();
+  }
+  var allEdge = true;
+  for (var e = 0; e < 12; e++) if (!fpv[fe[e][0]] || !fpv[fe[e][1]]){ allEdge = false; break; }
+  if (allEdge){
+    ctx.strokeStyle = 'rgba(70,120,200,0.5)';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    for (var e = 0; e < 12; e++){
+      ctx.moveTo(fpx[fe[e][0]], fpy[fe[e][0]]);
+      ctx.lineTo(fpx[fe[e][1]], fpy[fe[e][1]]);
+    }
+    ctx.stroke();
+  }
+  project(FR.x, FR.y, FR.z, _p);
+  if (_p.v){
+    ctx.globalAlpha = 0.10 + glitch*0.15;
+    var gw = 30*_p.s, gh = 20*_p.s;
+    ctx.drawImage(glowC, _p.x - gw/2, _p.y - gh/2, gw, gh);
+    ctx.globalAlpha = 0.5*fogA(_p.d);
+    var lw = 16*_p.s, lh = 3*_p.s;
+    ctx.drawImage(labelC, _p.x - lw/2, _p.y - lh/2, lw, lh);
+  }
+
+  /* ---- token stream ---- */
+  var streamDir = glitch > 0.2 ? -1.5 : 1;
+  var spdMul = RM ? 0.5 : 1;
+  for (var i = 0; i < STREAM_N; i++){
+    var it = stream[i];
+    it.t += it.speed * dt * 0.05 * streamDir * spdMul;
+    if (it.t > 1 || it.t < 0){
+      it.t = it.t > 1 ? 0 : 1;
+      it.text = TOKENS[(Math.random()*TOKENS.length)|0];
+      it.tint = TINTS[(Math.random()*TINTS.length)|0];
+      it.speed = rand(0.35, 1.1);
+    }
+    streamPos(it.t, it.phase, _sv);
+    var z = _sv[2];
+    var near = Math.exp(-((z+3)*(z+3))/10);
+    it.flashT = Math.max(0, it.flashT - dt*6);
+    if (it.lastZ !== null && it.lastZ < -3 && z >= -3) it.flashT = 0.5;
+    it.lastZ = z;
+    project(_sv[0], _sv[1], _sv[2], _p);
+    if (!_p.v) continue;
+    var a = (0.45 + near*0.55) * fogA(_p.d) * (1 + glitch*0.6);
+    if (it.flashT > 0){ a = Math.min(1, a + 0.5); }
+    var sz = it.baseScale * _p.s;
+    if (it.flashT > 0) sz *= 1.3;
+    ctx.globalAlpha = clamp(a, 0, 1);
+    ctx.drawImage(glyph(it.text, it.tint), _p.x - sz/2, _p.y - sz/2, sz, sz);
+  }
+
+  /* ---- attention web ---- */
+  var webRotY = t*0.035 + pointerX*0.25;
+  var webRotX = 0.08 + pointerY*0.12;
+  var crY = Math.cos(webRotY), srY = Math.sin(webRotY);
+  var crX = Math.cos(webRotX), srX = Math.sin(webRotX);
+  sparkTimer -= dt;
+  if (sparkTimer <= 0){
+    sparkTimer = 0.3;
+    for (var s2 = 0; s2 < 3; s2++) sparks[(Math.random()*NODE_N)|0] = 1;
+  }
+  for (var n2 = 0; n2 < NODE_N; n2++) sparks[n2] *= Math.pow(0.02, dt);
+  for (var n = 0; n < NODE_N; n++){
+    var wx = nodePos[n*3], wy = nodePos[n*3+1], wz = nodePos[n*3+2];
+    var x1 = wx*crY + wz*srY;
+    var z1 = -wx*srY + wz*crY;
+    var y2 = wy*crX - z1*srX;
+    var z2 = wy*srX + z1*crX;
+    rx[n] = x1; rz[n] = z2;
+    project(x1, y2, z2, _p);
+    pxA[n] = _p.x; pyA[n] = _p.y; pvA[n] = _p.v ? 1 : 0;
+  }
+  for (var q = 0; q < 8; q++) bucketPaths[q] = new Path2D();
+  var w = glitch > 0.3 ? 3 : 1;
+  for (var e = 0; e < edges.length; e++){
+    var ea = edges[e][0], eb = edges[e][1];
+    if (!pvA[ea] || !pvA[eb]) continue;
+    var mx = (rx[ea] + rx[eb]) / 2;
+    var mz = (rz[ea] + rz[eb]) / 2;
+    var mr = Math.sqrt(mx*mx + mz*mz);
+    var ang = Math.atan2(mz, mx);
+    var at = 0.16 + 0.14*Math.sin(t*0.7*w + ang*5) + 0.14*Math.sin(t*1.2*w - mr*1.4);
+    at = clamp(at + (sparks[ea] + sparks[eb])*0.9, 0, 1);
+    var qq = (at*7)|0;
+    if (qq > 7) qq = 7;
+    bucketPaths[qq].moveTo(pxA[ea], pyA[ea]);
+    bucketPaths[qq].lineTo(pxA[eb], pyA[eb]);
+  }
+  for (var q = 0; q < 8; q++){
+    ctx.strokeStyle = 'rgba(140,190,255,' + (0.05 + q/7*0.75).toFixed(3) + ')';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 1;
+    ctx.stroke(bucketPaths[q]);
+  }
+  ctx.fillStyle = 'rgba(160,200,255,0.9)';
+  for (var n = 0; n < NODE_N; n += 2){
+    if (!pvA[n]) continue;
+    ctx.globalAlpha = fogA(_p.d)*0.5;
+    ctx.fillRect(pxA[n]-1, pyA[n]-1, 2, 2);
+  }
+
+  /* ---- core ---- */
+  coreRotY += dt * (0.12 + glitch*0.9);
+  coreRotZ = Math.sin(t*0.23)*0.12 + glitch*Math.sin(t*30)*0.2;
+  project(0, 0, 0, _p);
+  if (_p.v){
+    var pulse = 1 + Math.sin(t*2.1)*0.035;
+    ctx.globalAlpha = (0.5 + glitch*0.7)*fogA(_p.d);
+    var g1 = 34*pulse*_p.s;
+    ctx.drawImage(glowC, _p.x - g1/2, _p.y - g1/2, g1, g1);
+    ctx.globalAlpha = (0.8 + glitch*0.4)*fogA(_p.d);
+    var g2 = 15*pulse*_p.s;
+    ctx.drawImage(glowC, _p.x - g2/2, _p.y - g2/2, g2, g2);
+    ctx.globalAlpha = fogA(_p.d);
+    var g3 = 4.6*pulse*_p.s;
+    ctx.drawImage(glowC, _p.x - g3/2, _p.y - g3/2, g3, g3);
+    /* wireframe */
+    var crY2 = Math.cos(coreRotY), srY2 = Math.sin(coreRotY);
+    var crZ2 = Math.cos(coreRotZ), srZ2 = Math.sin(coreRotZ);
+    var ivx = [], ivy = [];
+    for (var vv = 0; vv < 12; vv++){
+      var vx = iv[vv][0], vy = iv[vv][1], vz = iv[vv][2];
+      var x1 = vx*crY2 + vz*srY2;
+      var z1 = -vx*srY2 + vz*crY2;
+      var x2 = x1*crZ2 - vy*srZ2;
+      var y2 = x1*srZ2 + vy*crZ2;
+      project(x2, y2, z1, _p);
+      ivx.push(_p.x); ivy.push(_p.y);
+    }
+    ctx.strokeStyle = 'rgba(120,200,255,0.45)';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = fogA(_p.d);
+    ctx.beginPath();
+    for (var ee = 0; ee < ie.length; ee++){
+      ctx.moveTo(ivx[ie[ee][0]], ivy[ie[ee][0]]);
+      ctx.lineTo(ivx[ie[ee][1]], ivy[ie[ee][1]]);
+    }
+    ctx.stroke();
+    /* satellites */
+    for (var s3 = 0; s3 < SAT_N; s3++){
+      var sa = sats[s3];
+      sa.a += sa.w * dt * (1 + glitch*4);
+      var sx = Math.cos(sa.a)*sa.r, sy = sa.y + Math.sin(t*0.6 + sa.a)*0.8, sz2 = Math.sin(sa.a)*sa.r;
+      project(sx, sy, sz2, _p);
+      if (!_p.v) continue;
+      ctx.globalAlpha = 0.45*fogA(_p.d);
+      var gsz = sa.sc * _p.s;
+      ctx.drawImage(glyph(sa.text, sa.tint), _p.x - gsz/2, _p.y - gsz/2, gsz, gsz);
+    }
+  }
+
+  /* ---- HUD ---- */
+  updateWhisper(dt);
+  statusEl.innerHTML =
+    'tok ' + randHex(4) + ' · P(' + TOKENS[(Math.random()*TOKENS.length)|0] + ') = ' + (0.93 + Math.random()*0.069).toFixed(4) +
+    '<br>t = ' + t.toFixed(1) + 's · ctx = 2048 · dim = 4096' +
+    (glitch > 0.35 ? '<br><span style="color:#ff9ec2">⚠ 幻觉注入中</span>' : '');
+
+  flashEl.style.opacity = (glitch*0.1).toFixed(3);
+  noiseEl.style.opacity = (0.05 + glitch*0.4).toFixed(3);
+}
+frame();
+
+})();
+</script>
+</body>
+</html>
